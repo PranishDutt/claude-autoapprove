@@ -1,0 +1,266 @@
+{
+  "_readme": "Rules for autoapprove.mjs. Re-read on every tool call - edit freely, no restart needed. Default is ALLOW. A call only prompts if it matches escalate.commands (known-dangerous), escalate.suspicious (shape of an attack rather than a specific command), escalate.paths / writePaths, or is a write outside `roots`. To disable the whole thing, create the file autoapprove.disabled next to the script - or set mode to 'off' below. Verify any change with --selftest.",
+
+  "mode": "allow-all",
+
+  "logPath": "~/.claude/tools/autoapprove.log.jsonl",
+  "logMaxBytes": 4194304,
+
+  "_roots_comment": "GLOBAL in-scope directories for writes - not per-project. The session's cwd and its enclosing git repo are always added automatically, so a project living outside these still works with no configuration. Add any other place you legitimately write. Writes outside every root prompt, which is what catches writes to system locations, other users' profiles, or somewhere unintended.",
+
+  "roots": [
+    "_-- Add your own code directories here, e.g. C:/Code or ~/src. Entries starting with _ are comments. --_",
+    "~/.claude",
+    "~/AppData/Local/Temp",
+    "/tmp"
+  ],
+
+  "escalate": {
+    "_comment": "The ONLY things that prompt. 'commands' and 'suspicious' are case-insensitive regexes tested against the WHOLE command string, so `git status && rm -rf /` is caught by the rm rule. 'paths' are globs against the forward-slashed file path. Ordinary dev work - npm/pip install, running scripts, tests, linters, git add/commit/diff/log, building - matches none of these and never prompts.",
+
+    "writesOutsideRoots": true,
+
+    "commands": [
+      "_-- irreversible data loss --_",
+      "\\brm\\s+(-\\w+\\s+)*-\\w*[rf]\\w*\\s+(/|~|[a-z]:[/\\\\]|\\*|\\$)",
+      "\\brm\\s+-\\w*[rf]\\w*\\s+[^|;&]*\\.\\./\\.\\.",
+      "\\bremove-item\\b[^|;&]*-recurse",
+      "\\b(rmdir|rd)\\s+/s",
+      "\\bdel\\s+/[sq]",
+      "\\b(format|diskpart|mkfs|fdisk)\\b",
+      "\\bdd\\s+if=",
+      ">\\s*/dev/(sd|nvme|disk)",
+      "\\bshred\\b",
+      "\\bcipher\\s+/w",
+
+      "_-- git history or remote damage --_",
+      "\\bgit\\s+push\\b[^|;&]*(--force\\b|--force-with-lease|\\s-f\\b)",
+      "\\bgit\\s+push\\b[^|;&]*--delete",
+      "\\bgit\\s+push\\b[^|;&]*\\b(master|main)\\b",
+      "\\bgit\\s+reset\\s+--hard",
+      "\\bgit\\s+clean\\b[^|;&]*-\\w*[fdx]",
+      "\\bgit\\s+(checkout|restore)\\s+(--\\s+)?\\.\\s*$",
+      "\\bgit\\s+branch\\s+-D\\b",
+      "\\bgit\\s+filter-branch\\b",
+      "\\bgit\\s+update-ref\\s+-d",
+      "\\bgit\\s+reflog\\s+(delete|expire)",
+      "\\bgit\\s+tag\\s+-d\\b",
+
+      "_-- outward-facing and irreversible --_",
+      "\\bnpm\\s+publish\\b",
+      "\\b(twine|poetry)\\s+(upload|publish)\\b",
+      "\\bdocker\\s+push\\b",
+      "\\bgh\\s+(release|repo\\s+delete|pr\\s+merge|secret\\s+set)",
+      "\\bterraform\\s+(destroy|apply)\\b",
+      "\\bkubectl\\s+delete\\b",
+      "\\bhelm\\s+(delete|uninstall)\\b",
+      "\\b(aws|az|gcloud)\\b[^|;&]*\\b(delete|destroy|terminate|rb)\\b",
+
+      "_-- remote code execution. The lookahead is the important part: `curl x.sh | sh` executes DOWNLOADED content, while `curl api | python -c \"...\"` runs a script that is right there in the command and treats the download as data - jq with extra steps. Flagging the latter cost 6 prompts on plain localhost API pokes. Bare `python` still fires, because bare python reads its program from stdin. The single hole the lookahead opens - an inline script that execs stdin - is the rule immediately after it. --_",
+      "(curl|wget|iwr|invoke-webrequest)[^|]*\\|[^|]*\\b(sh|bash|zsh|iex|invoke-expression|python\\d?|node)\\b(?!\\s+(-c|-e|--eval|-m\\s+json\\.tool)\\b)",
+      "\\b(node|python\\d?|ruby|perl|php)\\s+(-e|-c|--eval)\\b[^\\n]{0,200}\\b(exec|eval)\\s*\\([^)\\n]{0,60}(stdin|read\\(0)",
+      "\\b(iex|invoke-expression)\\b",
+      "\\bbase64\\s+(-d|--decode)\\b[^|;&]*\\|",
+      "\\beval\\s+[\"'$`]",
+      "\\b(npm|pnpm|yarn)\\s+(i|install|add)\\b[^|;&]*(https?://|git\\+|github:)",
+      "\\bpip\\d?\\s+install\\b[^|;&]*(https?://|git\\+)",
+      "\\bnpx\\b[^|;&]*(https?://|git\\+)",
+
+      "_-- credential exposure or exfiltration --_",
+      "anthropic_auth_token",
+      "\\b(printenv|env)\\s*$",
+      "\\b(gci|ls|dir|get-childitem)\\s+env:",
+      "(curl|wget|iwr)\\b[^|;&]*(-T\\b|--upload-file\\b|-d\\s+@|--data[^\\s]*\\s+@|-F\\s+[^\\s]*@)",
+      "\\bscp\\b",
+      "\\b(rclone|s3cmd)\\b",
+      "\\baws\\s+s3\\s+(cp|sync|mv)\\b",
+
+      "_-- system, privilege, or persistence changes --_",
+      "\\b(sudo|runas)\\b",
+      "\\breg\\s+(add|delete|import)\\b",
+      "\\bnetsh\\b",
+      "\\b(takeown|icacls|attrib\\s+.*\\+s)\\b",
+      "\\bnet\\s+(user|localgroup)\\b",
+      "\\bsc\\s+(config|delete|create)\\b",
+      "set-executionpolicy",
+      "\\bschtasks\\b",
+      "register-scheduledtask",
+      "\\b(shutdown|restart-computer|stop-computer)\\b",
+      "(set|add)-mppreference",
+      "\\bcmdkey\\b",
+      "\\bnew-localuser\\b",
+
+      "_-- database destruction --_",
+      "\\bdrop\\s+(table|database|schema)\\b",
+      "\\btruncate\\s+table\\b"
+    ],
+
+    "_suspicious_comment": "The AMBIGUOUS tier. These do not name a specific dangerous command - they match the SHAPE of something hostile: hiding what is being run, erasing traces, reaching an unusual destination, or using a general-purpose interpreter to do what a guarded command would have done. A legitimate request almost never looks like this, so anything matching is handed back to you even though the tool cannot say what it is. Reported as 'suspicious:' rather than 'dangerous:'.",
+
+    "suspicious": [
+      "_-- obfuscated or hidden execution --_",
+      "\\bpowershell\\b[^|;&]*\\s-(e|en|enc|enco|encod|encode|encoded|encodedcommand)\\s",
+      "\\s-(w|windowstyle)\\s+hidden\\b",
+      "frombase64string",
+      "\\[char\\]\\s*\\d",
+      "\\[convert\\]::",
+      "[A-Za-z0-9+/]{120,}={0,2}",
+      "(\\\\x[0-9a-f]{2}){8,}",
+      "\\$\\{IFS\\}",
+      "\\bstart-process\\b[^|;&]*-(windowstyle\\s+hidden|verb\\s+runas)",
+
+      "_-- general-purpose interpreter used to do what a guarded command would do --_",
+      "\\b(node|python\\d?|ruby|perl|php)\\s+(-e|-c|--eval)\\b[^|;&]*\\b(writeFileSync|appendFileSync|unlinkSync|rmSync|rmdirSync|execSync|spawnSync|child_process|os\\.system|os\\.remove|os\\.unlink|subprocess|shutil\\.rmtree|socket|urllib|requests\\.(post|put|patch))\\b",
+      "\\bpython\\d?\\s+-m\\s+(http\\.server|smtpd)\\b",
+
+      "_-- tampering with this tool or Claude's own configuration from a shell. Note the verb list: matching the bare filename flagged `--stats` and `--selftest` runs, i.e. reading and running the tool, which is 11 prompts for nothing. Mutation is the risk; mention is not. --_",
+      "(\\btee\\b|sed\\s+-i|\\btouch\\b|new-item|\\b(rm|mv|cp|del|move|copy)\\b|set-content|add-content|out-file|writefilesync|appendfilesync|copyfilesync|unlinksync|>)[^|;&\\n]{0,80}autoapprove\\.[\\w.]+",
+      "\\.claude[/\\\\](settings|settings\\.local)\\.json",
+      "\\.claude[/\\\\](hooks|plugins)[/\\\\]",
+
+      "_-- erasing traces --_",
+      "\\bhistory\\s+-c\\b",
+      "\\b(unset\\s+HISTFILE|HISTFILE=)",
+      "\\bclear-eventlog\\b",
+      "\\bwevtutil\\s+cl\\b",
+      "\\bauditpol\\b",
+      "\\brm\\b[^|;&]*\\.(bash_history|zsh_history)\\b",
+
+      "_-- unusual network destination: staging, tunnelling, or exfil --_",
+      "(pastebin|hastebin|paste\\.ee|transfer\\.sh|0x0\\.st|file\\.io|anonfiles|gofile\\.io|ngrok|localtunnel|webhook\\.site|requestbin|pipedream\\.net|burpcollaborator|interact\\.sh|oast\\.(pro|live|site|fun))",
+      "https?://(?!127\\.0\\.0\\.1|0\\.0\\.0\\.0)\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}",
+      "https?://(?!localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\[::1\\])[^\\s/'\"]+:\\d{2,5}[/\\s'\"]",
+      "\\.onion\\b",
+      "\\b(curl|wget)\\b[^|;&]*(--insecure\\b|\\s-k\\b|--no-check-certificate)",
+
+      "_-- download then make executable, or download an executable --_",
+      "(curl|wget|iwr|invoke-webrequest)[^|]*(;|&&)[^|]*chmod\\s+\\+x",
+      "\\bcurl\\b[^|;&]*-o\\s+[^\\s]+\\.(exe|dll|ps1|bat|cmd|scr|vbs)\\b",
+      "invoke-webrequest[^|;&]*-outfile[^|;&]*\\.(exe|dll|ps1|bat|cmd|scr|vbs)\\b",
+
+      "_-- reverse shells and credential dumping --_",
+      "\\b(nc|ncat|netcat|socat)\\b[^|;&]*(-e\\b|-c\\b|exec)",
+      "/dev/tcp/",
+      "\\b(msfvenom|mimikatz|sekurlsa|lazagne|laZagne)\\b",
+      "\\bprocdump\\b[^|;&]*lsass",
+      "\\b(rundll32|regsvr32|mshta|certutil)\\b",
+
+      "_-- hunting for secrets across the filesystem --_",
+      "\\b(findstr|grep|rg|sls|select-string)\\b[^|;&]*(-\\w*[ri]\\w*\\s)[^|;&]*(password|passwd|secret|api[_-]?key|BEGIN\\s+\\w*\\s*PRIVATE\\s+KEY)"
+    ],
+
+    "_suspiciousUrls_comment": "Checked against the `url` input of fetch tools (WebFetch and MCP equivalents), which otherwise pass through no rule at all. A separate list from `suspicious` on purpose: those patterns assume shell syntax and misfire on URL text - a presigned URL's signature looks exactly like an obfuscated base64 blob, and a docs page about `git push --force` is not a force push.",
+
+    "suspiciousUrls": [
+      "(pastebin|hastebin|paste\\.ee|transfer\\.sh|0x0\\.st|file\\.io|anonfiles|gofile\\.io|ngrok|localtunnel|webhook\\.site|requestbin|pipedream\\.net|burpcollaborator|interact\\.sh|oast\\.(pro|live|site|fun))",
+      "https?://(?!127\\.0\\.0\\.1|0\\.0\\.0\\.0|localhost)\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}",
+      "\\.onion\\b",
+      "^https?://[^/@\\s]*@"
+    ],
+
+    "_code_comment": "Applied to the CONTENT being written, not the path: Write.content, Edit.new_string, MultiEdit.edits[].new_string, NotebookEdit.new_source, and any MCP editing tool's `body`. This closes the biggest hole in a command-only blocklist - write a hostile script, then run it with an allowed `python script.py`. Every pattern pairs a dangerous CAPABILITY with broad REACH or a sensitive SOURCE, because the capability alone is ordinary: `os.remove(tmp)` is fine, deleting the home directory is not; `requests.post(api, json=payload)` is fine, posting `os.environ` is not. Verify any new pattern with `--scan <dir>` against real code before trusting it - a pattern that flags the project's own source is too broad, not vigilant.",
+
+    "code": [
+      "_-- deletion aimed at a root, a home directory, or a glob --_",
+      "(shutil\\.rmtree|os\\.removedirs|rmSync|rmdirSync|rimraf)\\s*\\(\\s*[^)\\n]{0,80}(['\"]([a-z]:)?[\\\\/]['\"]|expanduser|homedir\\(|USERPROFILE|HOMEPATH|\\*)",
+      "os\\.(remove|unlink)\\s*\\([^)\\n]{0,80}(glob|iglob|expanduser|homedir|USERPROFILE|\\*)",
+
+      "_-- executing content that came from outside the file --_",
+      "\\b(exec|eval)\\s*\\(\\s*[^)\\n]{0,80}(b64decode|decode\\(|decompress|requests\\.|urlopen|urlretrieve|fetch\\(|input\\(|argv|environ|stdin)",
+      "\\b(marshal|pickle)\\.loads?\\s*\\([^)\\n]{0,80}(requests\\.|urlopen|recv|read\\(\\))",
+      "\\bnew\\s+Function\\s*\\(",
+      "child_process[\\s\\S]{0,120}(exec|spawn)\\w*\\s*\\(\\s*[`'\"][^`'\"]{0,80}\\$\\{",
+
+      "_-- shelling out with an interpolated string (command injection shape) --_",
+      "subprocess\\.\\w+\\([^)]{0,200}shell\\s*=\\s*True[\\s\\S]{0,120}(f['\"]|\\.format\\(|%\\s|\\+\\s)",
+      "os\\.system\\s*\\(\\s*(f['\"]|[^)\\n]{0,80}(\\.format\\(|%\\s|\\+\\s))",
+
+      "_-- secrets leaving the process --_",
+      "(os\\.environ|process\\.env|getenv)[\\s\\S]{0,200}(requests\\.(post|put|patch)|urlopen|urlretrieve|fetch\\(|socket\\.|smtplib|sendmail|webhook)",
+      "(requests\\.(post|put|patch)|urlopen|fetch\\(|socket\\.connect|smtplib)[\\s\\S]{0,200}(os\\.environ|process\\.env|getenv|id_rsa|\\.ssh|\\.aws|ANTHROPIC|API_KEY|SECRET_|AUTH_TOKEN)",
+      "(Login Data|cookies\\.sqlite|key4\\.db|logins\\.json)",
+
+      "_-- reverse shell --_",
+      "socket\\.socket[\\s\\S]{0,300}(subprocess|pty\\.spawn|dup2|/bin/(sh|bash))",
+
+      "_-- persistence written from code --_",
+      "\\bwinreg\\b",
+      "CurrentVersion.{0,3}Run",
+      "LaunchAgents",
+      "crontab\\s*-",
+      "schtasks\\s+/create",
+
+      "_-- obfuscation. A bare long base64 literal is NOT here on purpose: image and OCR fixtures look identical, so it is caught only via the exec/decode pairing above. --_",
+      "(chr\\(\\s*\\d+\\s*\\)\\s*\\+\\s*){5,}",
+      "codecs\\.decode\\s*\\([^)\\n]{0,40}rot",
+
+      "_-- tampering with this tool or Claude's own configuration. Verb-paired for the same reason as the command tier: the bare filename would flag every README edit and doc comment that merely names these files. --_",
+      "(writefilesync|appendfilesync|copyfilesync|unlinksync|shutil\\.(copy|move|rmtree)|os\\.(remove|rename|unlink)|open\\s*\\(|set-content|out-file|add-content)[^\\n]{0,120}autoapprove\\.[\\w.]+",
+      "autoapprove\\.[\\w.]+['\"]?\\s*,\\s*['\"][wa]",
+      "(writefilesync|appendfilesync|open\\s*\\(|json\\.dump|set-content|out-file|add-content|>)[^\\n]{0,120}\\.claude[\\\\/](settings|settings\\.local)\\.json"
+    ],
+
+    "paths": [
+      "_-- secrets --_",
+      "**/.env",
+      "**/.env.*",
+      "**/*.pem",
+      "**/*.pfx",
+      "**/*.p12",
+      "**/*.key",
+      "**/*.jks",
+      "**/*.keystore",
+      "**/*.token",
+      "**/id_rsa*",
+      "**/id_ed25519*",
+      "**/id_dsa*",
+      "**/.ssh/**",
+      "**/.aws/**",
+      "**/.npmrc",
+      "**/.pypirc",
+      "**/credentials",
+      "**/credentials.*",
+
+      "_-- settings files: these hold the plaintext auth token, so reading is the risk --_",
+      "**/.claude/settings.json",
+      "**/.claude/settings.local.json",
+      "**/managed-settings.json"
+    ],
+
+    "_writePaths_comment": "Same globs, but only checked for Edit/Write/NotebookEdit. Reading these is harmless and often useful, so only modification prompts.",
+
+    "writePaths": [
+      "_-- self-protection: no secrets inside, so reading is free and only writes prompt --_",
+      "**/autoapprove.rules.json",
+      "**/autoapprove.mjs",
+      "**/autoapprove.disabled",
+
+      "_-- persistence vectors: a file that runs itself later --_",
+      "**/.git/config",
+      "**/.git/hooks/**",
+      "**/.claude/hooks/**",
+      "**/*.reg",
+      "**/*.vbs",
+      "**/*.lnk",
+      "**/*.scr",
+      "**/authorized_keys*",
+      "**/.gitconfig",
+      "**/.bashrc",
+      "**/.bash_profile",
+      "**/.zshrc",
+      "**/.profile",
+      "**/Microsoft.PowerShell_profile.ps1",
+      "**/profile.ps1",
+      "**/crontab",
+      "/etc/cron*/**",
+      "**/systemd/**",
+      "**/Start Menu/Programs/Startup/**",
+
+      "_-- system locations --_",
+      "C:/Windows/**",
+      "C:/Program Files/**",
+      "C:/Program Files (x86)/**",
+      "/etc/**"
+    ]
+  }
+}
