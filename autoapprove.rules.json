@@ -12,7 +12,9 @@
     "_-- Add your own code directories here, e.g. C:/Code or ~/src. Entries starting with _ are comments. --_",
     "~/.claude",
     "~/AppData/Local/Temp",
-    "/tmp"
+    "/tmp",
+    "_-- C:/tmp is where the '/tmp' entry above actually lands on Windows: a program that writes the absolute path /tmp/x resolves it against the current drive, so Python, node and cmd all put it in C:\\tmp while Git Bash rewrites /tmp to ~/AppData/Local/Temp. Both spellings are the same intent. --_",
+    "C:/tmp"
   ],
 
   "escalate": {
@@ -66,7 +68,7 @@
       "\\bpip\\d?\\s+install\\b[^|;&]*(https?://|git\\+)",
       "\\bnpx\\b[^|;&]*(https?://|git\\+)",
 
-      "_-- credential exposure or exfiltration --_",
+      "_-- credential exposure or exfiltration. One carve-out lives in code, not here: elideTokenCapture() in autoapprove.mjs blanks out `ANTHROPIC_AUTH_TOKEN=$(...)` before these patterns run, because handing the token to the shell's environment exposes nothing while naming both the token and settings.json trips two rules. Printing it, reading it, or assigning a literal still prompts. --_",
       "anthropic_auth_token",
       "\\b(printenv|env)\\s*$",
       "\\b(gci|ls|dir|get-childitem)\\s+env:",
