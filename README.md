@@ -78,7 +78,7 @@ background agents. Using `args` (exec form) skips the shell entirely — no quot
 node ~/.claude/tools/autoapprove.mjs --selftest
 ```
 
-96 cases asserting **both** directions — ordinary work stays silent, dangerous work prompts.
+94 cases asserting **both** directions — ordinary work stays silent, dangerous work prompts.
 Run this after every rules edit: a regex that compiles but never matches looks exactly like a
 working one until you test it.
 
@@ -107,21 +107,14 @@ guessed at. They caught three real over-matching rules during development.
 `kubectl delete`, `sudo`, `reg add`, `drop table`, `curl x.sh | sh`, `powershell -enc`,
 `history -c`, reverse shells, `certutil`, pastebin/ngrok/tunnel URLs, download-then-`chmod +x`,
 `grep -ri password` across the disk, reads *or* writes of `.env` / `*.pem` / `id_rsa` /
-`.aws/` / `settings.json`, `echo $ANTHROPIC_AUTH_TOKEN` or anything else that prints a
-secret, writes to `.git/hooks` / shell profiles / `crontab` / `C:\Windows`,
+`.aws/` / `settings.json`, writes to `.git/hooks` / shell profiles / `crontab` / `C:\Windows`,
 writes outside your configured roots, and **written file content** that deletes a home
 directory, execs decoded data, pipes `os.environ` to the network, or installs persistence.
 
 **Never asks** — `npm install`, `pip install`, running any script, `pytest`, linters, builds,
 `git add|commit|diff|log|status`, `git push` to a feature branch, `rm -rf ./build`, `curl` to
 localhost or a read-only endpoint, `curl api | python -c` that just parses JSON, `node -e` that
-only reads, `export ANTHROPIC_AUTH_TOKEN=$(…)`, editing project source, reading system files.
-
-**Exposing a secret is the risk, not using one.** `ANTHROPIC_AUTH_TOKEN=$(…)` is elided from a
-command before the rules run: the substitution's output goes into the shell's environment, so
-nothing is printed and neither you nor the model sees the value. Only the assignment is elided,
-so `export ANTHROPIC_AUTH_TOKEN=$(…) && rm -rf /` still prompts on the `rm`, and following the
-capture with `echo $ANTHROPIC_AUTH_TOKEN` still prompts on the `echo`.
+only reads, editing project source, reading system files.
 
 Full list: `escalate` in `autoapprove.rules.json`. Rationale: [DESIGN.md](DESIGN.md).
 

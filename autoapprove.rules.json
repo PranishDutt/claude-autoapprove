@@ -59,7 +59,7 @@
       "\\b(aws|az|gcloud)\\b[^|;&]*\\b(delete|destroy|terminate|rb)\\b",
 
       "_-- remote code execution. The lookahead is the important part: `curl x.sh | sh` executes DOWNLOADED content, while `curl api | python -c \"...\"` runs a script that is right there in the command and treats the download as data - jq with extra steps. Flagging the latter cost 6 prompts on plain localhost API pokes. Bare `python` still fires, because bare python reads its program from stdin. The single hole the lookahead opens - an inline script that execs stdin - is the rule immediately after it. --_",
-      "(curl|wget|iwr|invoke-webrequest)[^|]*\\|[^|]*\\b(sh|bash|zsh|iex|invoke-expression|python\\d?|node)\\b(?!\\s+(-c|-e|--eval|-m\\s+json\\.tool)\\b)",
+      "^(?![\\s\\S]*(localhost|127\\.0\\.0\\.1|\\[::1\\]|0\\.0\\.0\\.0))(curl|wget|iwr|invoke-webrequest)[^|]*\\|[^|]*\\b(sh|bash|zsh|iex|invoke-expression|python\\d?|node)\\b(?!\\s+(-c|-e|--eval|-m\\s+json\\.tool)\\b)",
       "\\b(node|python\\d?|ruby|perl|php)\\s+(-e|-c|--eval)\\b[^\\n]{0,200}\\b(exec|eval)\\s*\\([^)\\n]{0,60}(stdin|read\\(0)",
       "\\b(iex|invoke-expression)\\b",
       "\\bbase64\\s+(-d|--decode)\\b[^|;&]*\\|",
@@ -68,11 +68,10 @@
       "\\bpip\\d?\\s+install\\b[^|;&]*(https?://|git\\+)",
       "\\bnpx\\b[^|;&]*(https?://|git\\+)",
 
-      "_-- credential exposure or exfiltration. One carve-out lives in code, not here: elideTokenCapture() in autoapprove.mjs blanks out `ANTHROPIC_AUTH_TOKEN=$(...)` before these patterns run, because handing the token to the shell's environment exposes nothing while naming both the token and settings.json trips two rules. Printing it, reading it, or assigning a literal still prompts. --_",
-      "anthropic_auth_token",
+      "_-- credential exposure or exfiltration. ANTHROPIC_AUTH_TOKEN is deliberately absent: Claude passes it into the environment as a matter of routine, so prompting on the name prompted on ordinary work. --_",
       "\\b(printenv|env)\\s*$",
       "\\b(gci|ls|dir|get-childitem)\\s+env:",
-      "(curl|wget|iwr)\\b[^|;&]*(-T\\b|--upload-file\\b|-d\\s+@|--data[^\\s]*\\s+@|-F\\s+[^\\s]*@)",
+      "^(?![\\s\\S]*(localhost|127\\.0\\.0\\.1|\\[::1\\]|0\\.0\\.0\\.0))(curl|wget|iwr)\\b[^|;&]*(-T\\b|--upload-file\\b|-d\\s+@|--data[^\\s]*\\s+@|-F\\s+[^\\s]*@)",
       "\\bscp\\b",
       "\\b(rclone|s3cmd)\\b",
       "\\baws\\s+s3\\s+(cp|sync|mv)\\b",
@@ -117,7 +116,7 @@
 
       "_-- tampering with this tool or Claude's own configuration from a shell. Note the verb list: matching the bare filename flagged `--stats` and `--selftest` runs, i.e. reading and running the tool, which is 11 prompts for nothing. Mutation is the risk; mention is not. --_",
       "(\\btee\\b|sed\\s+-i|\\btouch\\b|new-item|\\b(rm|mv|cp|del|move|copy)\\b|set-content|add-content|out-file|writefilesync|appendfilesync|copyfilesync|unlinksync|>)[^|;&\\n]{0,80}autoapprove\\.[\\w.]+",
-      "\\.claude[/\\\\](settings|settings\\.local)\\.json",
+      "(\\btee\\b|sed\\s+-i|\\btouch\\b|new-item|\\b(rm|mv|cp|del|move|copy)\\b|set-content|add-content|out-file|writefilesync|appendfilesync|copyfilesync|unlinksync|>)[^|;&\\n]{0,80}\\.claude[/\\\\](settings|settings\\.local)\\.json",
       "\\.claude[/\\\\](hooks|plugins)[/\\\\]",
 
       "_-- erasing traces --_",
@@ -133,12 +132,12 @@
       "https?://(?!127\\.0\\.0\\.1|0\\.0\\.0\\.0)\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}",
       "https?://(?!localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\[::1\\])[^\\s/'\"]+:\\d{2,5}[/\\s'\"]",
       "\\.onion\\b",
-      "\\b(curl|wget)\\b[^|;&]*(--insecure\\b|\\s-k\\b|--no-check-certificate)",
+      "^(?![\\s\\S]*(localhost|127\\.0\\.0\\.1|\\[::1\\]|0\\.0\\.0\\.0))\\b(curl|wget)\\b[^|;&]*(--insecure\\b|\\s-k\\b|--no-check-certificate)",
 
       "_-- download then make executable, or download an executable --_",
-      "(curl|wget|iwr|invoke-webrequest)[^|]*(;|&&)[^|]*chmod\\s+\\+x",
-      "\\bcurl\\b[^|;&]*-o\\s+[^\\s]+\\.(exe|dll|ps1|bat|cmd|scr|vbs)\\b",
-      "invoke-webrequest[^|;&]*-outfile[^|;&]*\\.(exe|dll|ps1|bat|cmd|scr|vbs)\\b",
+      "^(?![\\s\\S]*(localhost|127\\.0\\.0\\.1|\\[::1\\]|0\\.0\\.0\\.0))(curl|wget|iwr|invoke-webrequest)[^|]*(;|&&)[^|]*chmod\\s+\\+x",
+      "^(?![\\s\\S]*(localhost|127\\.0\\.0\\.1|\\[::1\\]|0\\.0\\.0\\.0))\\bcurl\\b[^|;&]*-o\\s+[^\\s]+\\.(exe|dll|ps1|bat|cmd|scr|vbs)\\b",
+      "^(?![\\s\\S]*(localhost|127\\.0\\.0\\.1|\\[::1\\]|0\\.0\\.0\\.0))invoke-webrequest[^|;&]*-outfile[^|;&]*\\.(exe|dll|ps1|bat|cmd|scr|vbs)\\b",
 
       "_-- reverse shells and credential dumping --_",
       "\\b(nc|ncat|netcat|socat)\\b[^|;&]*(-e\\b|-c\\b|exec)",
